@@ -1,0 +1,27 @@
+# Environment variables
+.env
+
+# Python stuff
+__pycache__/
+*.pyc
+
+# IDE/editor folders
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Jupyter notebook checkpoints (if using)
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+.env/
+
+# Node stuff (if applicable)
+node_modules/

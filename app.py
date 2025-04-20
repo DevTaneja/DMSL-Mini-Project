@@ -5,13 +5,22 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+password = os.getenv("SQL_PASSWORD")
+
+
 # Function to connect to the database
 def connect_to_db():
     try:
         connection = mysql.connector.connect(
             host="localhost",  # Replace with your host, 'localhost' if running locally
             user="root",       # Your MySQL username
-            password="Incorrect@123",  # Your MySQL password
+            password=password,  # Your MySQL password
             database="food_ordering_system"  # Your database name
         )
         return connection
