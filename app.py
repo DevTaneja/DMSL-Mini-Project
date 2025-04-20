@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
-
+from datetime import datetime
 from dotenv import load_dotenv
 import os
 
@@ -144,6 +144,24 @@ def get_reviews_data_by_restaurant(restaurant_id):
         return df
     return None
 
+def get_customer_list():
+    connection = connect_to_db()
+    if connection:
+        query = "SELECT customer_id, name FROM Customers;"
+        df = pd.read_sql(query, connection)
+        connection.close()
+        return df
+    return pd.DataFrame()
+
+def get_restaurant_list():
+    connection = connect_to_db()
+    if connection:
+        query = "SELECT restaurant_id, name FROM Restaurants;"
+        df = pd.read_sql(query, connection)
+        connection.close()
+        return df
+    return pd.DataFrame()
+
 # Function to display reviews by restaurant
 def display_reviews_by_restaurant(restaurant_id,selected_restaurant_name ):
     reviews = get_reviews_data_by_restaurant(restaurant_id)
@@ -191,6 +209,26 @@ def get_restaurant_insights(restaurant_id):
         connection.close()
         return df
     return None
+
+def add_order(customer_id, restaurant_id, total_amount, order_time):
+    connection = connect_to_db()
+    if connection:
+        try:
+            cursor = connection.cursor()
+            query = """
+                INSERT INTO Orders (customer_id, restaurant_id, total_amount, order_time)
+                VALUES (%s, %s, %s, %s);
+            """
+            cursor.execute(query, (customer_id, restaurant_id, total_amount, order_time))
+            connection.commit()
+            cursor.close()
+            connection.close()
+            return True
+        except mysql.connector.Error as err:
+            st.error(f"Error: {err}")
+            return False
+    return False
+
 
 
 # Main Streamlit function
@@ -268,10 +306,39 @@ def main():
     #     st.subheader("Average Order Value")
     #     st.write(f"The average order value is: **₹{avg_order_value:.2f}**.")
 
+    st.header("Add a New Order")
+
+    # Load customer and restaurant data
+    customers_df = get_customer_list()
+    restaurants_df = get_restaurant_list()
+
+    with st.form("add_order_form"):
+        customer_name = st.selectbox("Select Customer", customers_df['name'].tolist())
+        restaurant_name = st.selectbox("Select Restaurant", restaurants_df['name'].tolist())
+        total_amount = st.number_input("Total Amount (₹)", min_value=0.0, format="%.2f")
+
+        order_date = st.date_input("Order Date")
+        order_time_only = st.time_input("Order Time")
+        order_time = datetime.combine(order_date, order_time_only)
+
+        submitted = st.form_submit_button("Submit Order")
+        if submitted:
+            # Get IDs from selected names
+            customer_id = int(customers_df[customers_df['name'] == customer_name]['customer_id'].values[0])
+            restaurant_id = int(restaurants_df[restaurants_df['name'] == restaurant_name]['restaurant_id'].values[0])
+
+            
+            success = add_order(customer_id, restaurant_id, total_amount, order_time)
+            if success:
+                st.success("Order added successfully!")
+            else:
+                st.error("Failed to add order.")
+
+
     if restaurant_data is not None:
         st.subheader("Total Sales by Restaurant")
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.barplot(data=restaurant_data, x='restaurant_name', y='total_sales', palette='coolwarm', ax=ax)
+        sns.barplot(data=restaurant_data, x='restaurant_name', y='total_sales', palette='Spectral', ax=ax)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=10)
         ax.set_xlabel('Restaurant', fontsize=12)
         ax.set_ylabel('Total Sales (INR)', fontsize=12)
@@ -306,7 +373,7 @@ def main():
     if customer_insights is not None and not customer_insights.empty:
         st.subheader("Top 5 Customers Based on Spending")
         for index, row in customer_insights.iterrows():
-            st.write(f"**{row['customer_name']}** made {row['total_orders']} orders, spending ₹{row['total_spent']:.2f}.")
+            st.write(f"***{row['customer_name']}*** made {row['total_orders']} orders, spending ₹{row['total_spent']:.2f}.")
     else:
         st.write("No customer insights available.")
 
