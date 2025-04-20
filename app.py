@@ -12,6 +12,21 @@ load_dotenv()
 
 password = os.getenv("SQL_PASSWORD")
 
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'username' not in st.session_state:  
+    st.session_state['username'] = None
+if 'password' not in st.session_state:  
+    st.session_state['password'] = None
+if 'admin' not in st.session_state:
+    st.session_state['admin'] = True
+if 'restaurant_id' not in st.session_state:
+    st.session_state['restaurant_id'] = None
+if 'restaurant_name' not in st.session_state:
+    st.session_state['restaurant_name'] = None
+
+
+
 # Function to connect to the database
 def connect_to_db():
     try:
@@ -193,6 +208,23 @@ def get_customer_insights():
         return df
     return None
 
+def authenticate_user(username, password):
+    connection = connect_to_db()
+    if connection:
+        query = """
+            SELECT password FROM Restaurants WHERE name = %s;
+        """
+        cursor = connection.cursor()
+        cursor.execute(query, (username,))
+        result = cursor.fetchone()
+        cursor.close()
+        connection.close()
+
+        # Check if result exists and password matches
+        if result:
+            stored_password = result[0]
+            return stored_password == password
+    return False
 
 #Restraunt Insights
 def get_restaurant_insights(restaurant_id):
@@ -229,175 +261,296 @@ def add_order(customer_id, restaurant_id, total_amount, order_time):
             return False
     return False
 
+def get_restaurant_sales_data(restaurant_id):
+    connection = connect_to_db()
+    query = """
+        SELECT COUNT(*) as order_count, SUM(total_amount) as total_sales 
+        FROM Orders WHERE restaurant_id = %s;
+    """
+    df = pd.read_sql(query, connection, params=(int(restaurant_id),)) 
+    connection.close()
+    return df
+
+def get_orders_data_by_restaurant(restaurant_id):
+    connection = connect_to_db()
+    query = "SELECT * FROM Orders WHERE restaurant_id = %(restaurant_id)s;"
+    df = pd.read_sql(query, connection, params={"restaurant_id": int(restaurant_id)})
+    connection.close()
+    return df
+
+
+def get_top_customers_by_restaurant(restaurant_id):
+    connection = connect_to_db()
+    query = """
+        SELECT c.name AS customer_name, COUNT(*) AS total_orders, SUM(o.total_amount) AS total_spent
+        FROM Orders o
+        JOIN Customers c ON o.customer_id = c.customer_id
+        WHERE o.restaurant_id = %(restaurant_id)s
+        GROUP BY c.customer_id
+        ORDER BY total_spent DESC
+        LIMIT 5;
+    """
+    df = pd.read_sql(query, connection, params={"restaurant_id": int(restaurant_id)})
+    connection.close()
+    return df
 
 
 # Main Streamlit function
 def main():
-    
-    # Fetch restaurant-specific sales data
-    restaurant_data = get_restaurant_data()
+    st.markdown("<h1 style='text-align: center; color: #2f7ed8;'>Food Ordering Sales Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("---")
 
-    # Add one more metric here (for example, Total Orders)
-    total_orders = get_total_orders()
+    if st.session_state['logged_in']:
+        if st.button("Logout"):
+            st.session_state['logged_in'] = False
+            st.session_state['admin'] = False
+            st.session_state['restaurant_id'] = None
+            st.session_state['username'] = ""
+            st.session_state['restaurant_name'] = ""
+            st.rerun()
+        if st.session_state['admin']:
+            # Fetch restaurant-specific sales data
+            restaurant_data = get_restaurant_data()
 
-    st.title("Sales Analysis Dashboard")
-    st.header("Restaurant Performance Overview")
-    
-    # 2x2 Grid of Metrics (Big Numbers)
-    st.subheader("Key Metrics Overview")
-    col1, col2 = st.columns(2)
-    with col1:
-        # Total Sales for the Day
-        total_sales_today = get_total_sales_today()
-        if total_sales_today is not None:
-            st.markdown(f"<h2 style='color: #2f7ed8;'>₹{total_sales_today:.2f}</h2>", unsafe_allow_html=True)
-        else:
-            st.markdown("<h2 style='color: #2f7ed8;'>₹0.00</h2>", unsafe_allow_html=True)
-        st.write("**Total Sales Today**")
+            # Add one more metric here (for example, Total Orders)
+            total_orders = get_total_orders()
 
-    with col2:
-        # Number of Restaurants
-        num_restaurants = get_num_restaurants()
-        if num_restaurants is not None:
-            st.markdown(f"<h2 style='color: #e9444d;'>{num_restaurants}</h2>", unsafe_allow_html=True)
-        else:
-            st.markdown("<h2 style='color: #e9444d;'>0</h2>", unsafe_allow_html=True)
-        st.write("**Total Restaurants**")
-
-    col3, col4 = st.columns(2)
-    with col3:
-        # Average Sales per Restaurant
-        if restaurant_data is not None and len(restaurant_data) > 0:
-            avg_sales_per_restaurant = restaurant_data['total_sales'].sum() / len(restaurant_data)
-            st.markdown(f"<h2 style='color: #28a745;'>₹{avg_sales_per_restaurant:.2f}</h2>", unsafe_allow_html=True)
-        else:
-            st.markdown("<h2 style='color: #28a745;'>₹0.00</h2>", unsafe_allow_html=True)
-        st.write("**Avg Sales per Restaurant**")
-
-    with col4:
-        # Total Orders
-        if total_orders is not None:
-            st.markdown(f"<h2 style='color: #ffc107;'>{total_orders}</h2>", unsafe_allow_html=True)
-        else:
-            st.markdown("<h2 style='color: #ffc107;'>0</h2>", unsafe_allow_html=True)
-        st.write("**Total Orders**")
-    
-    # Fetch key metrics (textual insights)
-    most_liked_dish = get_most_liked_dish()
-    avg_order_value = get_avg_order_value()
-
-    # Display metrics in columns
-    col1, col2 = st.columns(2)
-    with col1:
-        if most_liked_dish is not None:
-            st.markdown(f"<h2 style='color: #b907f7;'>{most_liked_dish}</h2>", unsafe_allow_html=True)
-        else:
-            st.markdown("<h2 style='color: #2f7ed8;'>None</h2>", unsafe_allow_html=True)
-        st.write("**Most Liked Dish**")
-
-    with col2:
-        if avg_order_value is not None:
-            st.markdown(f"<h2 style='color: #f707aa  ;'>₹{avg_order_value:.2f}</h2>", unsafe_allow_html=True)
-        else:
-            st.markdown("<h2 style='color: #f1948a;'>0</h2>", unsafe_allow_html=True)
-        st.write("**Average Order Value**")
-
-    # with col2:
-    #     st.subheader("Average Order Value")
-    #     st.write(f"The average order value is: **₹{avg_order_value:.2f}**.")
-
-    st.header("Add a New Order")
-
-    # Load customer and restaurant data
-    customers_df = get_customer_list()
-    restaurants_df = get_restaurant_list()
-
-    with st.form("add_order_form"):
-        customer_name = st.selectbox("Select Customer", customers_df['name'].tolist())
-        restaurant_name = st.selectbox("Select Restaurant", restaurants_df['name'].tolist())
-        total_amount = st.number_input("Total Amount (₹)", min_value=0.0, format="%.2f")
-
-        order_date = st.date_input("Order Date")
-        order_time_only = st.time_input("Order Time")
-        order_time = datetime.combine(order_date, order_time_only)
-
-        submitted = st.form_submit_button("Submit Order")
-        if submitted:
-            # Get IDs from selected names
-            customer_id = int(customers_df[customers_df['name'] == customer_name]['customer_id'].values[0])
-            restaurant_id = int(restaurants_df[restaurants_df['name'] == restaurant_name]['restaurant_id'].values[0])
-
+            st.title("Sales Analysis Dashboard")
+            st.header("Restaurant Performance Overview")
             
-            success = add_order(customer_id, restaurant_id, total_amount, order_time)
-            if success:
-                st.success("Order added successfully!")
+            # 2x2 Grid of Metrics (Big Numbers)
+            st.subheader("Key Metrics Overview")
+            col1, col2 = st.columns(2)
+            with col1:
+                # Total Sales for the Day
+                total_sales_today = get_total_sales_today()
+                if total_sales_today is not None:
+                    st.markdown(f"<h2 style='color: #2f7ed8;'>₹{total_sales_today:.2f}</h2>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h2 style='color: #2f7ed8;'>₹0.00</h2>", unsafe_allow_html=True)
+                st.write("**Total Sales Today**")
+
+            with col2:
+                # Number of Restaurants
+                num_restaurants = get_num_restaurants()
+                if num_restaurants is not None:
+                    st.markdown(f"<h2 style='color: #e9444d;'>{num_restaurants}</h2>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h2 style='color: #e9444d;'>0</h2>", unsafe_allow_html=True)
+                st.write("**Total Restaurants**")
+
+            col3, col4 = st.columns(2)
+            with col3:
+                # Average Sales per Restaurant
+                if restaurant_data is not None and len(restaurant_data) > 0:
+                    avg_sales_per_restaurant = restaurant_data['total_sales'].sum() / len(restaurant_data)
+                    st.markdown(f"<h2 style='color: #28a745;'>₹{avg_sales_per_restaurant:.2f}</h2>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h2 style='color: #28a745;'>₹0.00</h2>", unsafe_allow_html=True)
+                st.write("**Avg Sales per Restaurant**")
+
+            with col4:
+                # Total Orders
+                if total_orders is not None:
+                    st.markdown(f"<h2 style='color: #ffc107;'>{total_orders}</h2>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h2 style='color: #ffc107;'>0</h2>", unsafe_allow_html=True)
+                st.write("**Total Orders**")
+            
+            # Fetch key metrics (textual insights)
+            most_liked_dish = get_most_liked_dish()
+            avg_order_value = get_avg_order_value()
+
+            # Display metrics in columns
+            col1, col2 = st.columns(2)
+            with col1:
+                if most_liked_dish is not None:
+                    st.markdown(f"<h2 style='color: #b907f7;'>{most_liked_dish}</h2>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h2 style='color: #2f7ed8;'>None</h2>", unsafe_allow_html=True)
+                st.write("**Most Liked Dish**")
+
+            with col2:
+                if avg_order_value is not None:
+                    st.markdown(f"<h2 style='color: #f707aa  ;'>₹{avg_order_value:.2f}</h2>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h2 style='color: #f1948a;'>0</h2>", unsafe_allow_html=True)
+                st.write("**Average Order Value**")
+
+            # with col2:
+            #     st.subheader("Average Order Value")
+            #     st.write(f"The average order value is: **₹{avg_order_value:.2f}**.")
+
+            st.header("Add a New Order")
+
+            # Load customer and restaurant data
+            customers_df = get_customer_list()
+            restaurants_df = get_restaurant_list()
+
+            with st.form("add_order_form"):
+                customer_name = st.selectbox("Select Customer", customers_df['name'].tolist())
+                restaurant_name = st.selectbox("Select Restaurant", restaurants_df['name'].tolist())
+                total_amount = st.number_input("Total Amount (₹)", min_value=0.0, format="%.2f")
+
+                order_date = st.date_input("Order Date")
+                order_time_only = st.time_input("Order Time")
+                order_time = datetime.combine(order_date, order_time_only)
+
+                submitted = st.form_submit_button("Submit Order")
+                if submitted:
+                    # Get IDs from selected names
+                    customer_id = int(customers_df[customers_df['name'] == customer_name]['customer_id'].values[0])
+                    restaurant_id = int(restaurants_df[restaurants_df['name'] == restaurant_name]['restaurant_id'].values[0])
+
+                    success = add_order(customer_id, restaurant_id, total_amount, order_time)
+                    if success:
+                        st.success("Order added successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to add order.")
+
+
+
+            if restaurant_data is not None:
+                st.subheader("Total Sales by Restaurant")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                sns.barplot(data=restaurant_data, x='restaurant_name', y='total_sales', palette='Spectral', ax=ax)
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=10)
+                ax.set_xlabel('Restaurant', fontsize=12)
+                ax.set_ylabel('Total Sales (INR)', fontsize=12)
+                ax.set_title('Total Sales by Restaurant', fontsize=14)
+                st.pyplot(fig)
+
+            # Fetch orders data for more analysis
+            orders_data = get_orders_data()
+
+            # Simultaneous Graphs - Average Order Value by Restaurant (Pie chart)
+            st.subheader("Order Distribution by Restaurant")
+            fig2 = px.pie(restaurant_data, names='restaurant_name', values='order_count', 
+                        title='Number of Orders by Restaurant', 
+                        color='restaurant_name', 
+                        color_discrete_sequence=px.colors.qualitative.Set3)
+            st.plotly_chart(fig2)
+
+            # Simultaneous Graph - Orders by Day
+            st.subheader("Orders by Day")
+            fig3, ax3 = plt.subplots(figsize=(10, 6))
+            orders_data['order_date'] = pd.to_datetime(orders_data['order_time']).dt.date
+            daily_sales = orders_data.groupby('order_date')['total_amount'].sum().reset_index()
+
+            sns.lineplot(data=daily_sales, x='order_date', y='total_amount', ax=ax3, palette='muted')
+            ax3.set_xlabel('Order Date', fontsize=12)
+            ax3.set_ylabel('Total Sales (INR)', fontsize=12)
+            ax3.set_title('Total Sales by Day', fontsize=14)
+            st.pyplot(fig3)
+
+        # Customer Insights
+            customer_insights = get_customer_insights()
+            if customer_insights is not None and not customer_insights.empty:
+                st.subheader("Top 5 Customers Based on Spending")
+                for index, row in customer_insights.iterrows():
+                    st.write(f"***{row['customer_name']}*** made {row['total_orders']} orders, spending ₹{row['total_spent']:.2f}.")
             else:
-                st.error("Failed to add order.")
+                st.write("No customer insights available.")
+
+            st.header("Restaurant Insights")
+            # Reviews and Customer Insights Section
+            restaurant_options = restaurant_data['restaurant_name'].unique()  # Get unique restaurant names
+            selected_restaurant = st.selectbox("Select a Restaurant", restaurant_options)  # Dropdown for restaurant selection
+            
+            # Fetch the corresponding restaurant_id
+            selected_restaurant_id = restaurant_data[restaurant_data['restaurant_name'] == selected_restaurant].index[0] + 1  # Assuming restaurant_id starts from 1
+
+            #Fetch the corresponding Restraunt Name
+            selected_restaurant_name = restaurant_data[restaurant_data['restaurant_name'] == selected_restaurant]['restaurant_name'].values[0]
+            display_reviews_by_restaurant(selected_restaurant_id ,selected_restaurant_name )
+
+            # Restaurant Insights
+            restaurant_insights =get_restaurant_insights(selected_restaurant_id)
+            if restaurant_insights is not None and not restaurant_insights.empty:
+                st.subheader(f"Metrics for {selected_restaurant}")
+                st.write(f"Total Orders: {restaurant_insights.iloc[0]['total_orders']}")
+                st.write(f"Total Sales: ₹{restaurant_insights.iloc[0]['total_sales']:.2f}")
+            else:
+                st.write("No insights available for this restaurant.")
+
+            # st.button("Logout", on_click=lambda: st.session_state.update(logged_in=False))
+            # st.rerun()
+        else:
+            st.title(f"Welcome, {st.session_state['restaurant_name']} 🍽️")
+            st.header("Your Sales Dashboard")
+
+            # Fetch data specific to this restaurant
+            restaurant_id = st.session_state['restaurant_id']
+            restaurant_sales_data = get_restaurant_sales_data(restaurant_id)
+            restaurant_orders_data = get_orders_data_by_restaurant(restaurant_id)
+            restaurant_insights = get_restaurant_insights(restaurant_id)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Total Sales")
+                total_sales = restaurant_sales_data['total_sales'].sum()
+                st.markdown(f"<h2 style='color: #2f7ed8;'>₹{total_sales:.2f}</h2>", unsafe_allow_html=True)
+
+            with col2:
+                st.subheader("Total Orders")
+                total_orders = restaurant_sales_data['order_count'].sum()
+                st.markdown(f"<h2 style='color: #e9444d;'>{total_orders}</h2>", unsafe_allow_html=True)
+
+            # Daily sales line chart
+            st.subheader("Daily Sales Trend")
+            daily_sales = restaurant_orders_data.copy()
+            daily_sales['order_date'] = pd.to_datetime(daily_sales['order_time']).dt.date
+            daily_summary = daily_sales.groupby('order_date')['total_amount'].sum().reset_index()
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            sns.lineplot(data=daily_summary, x='order_date', y='total_amount', ax=ax)
+            ax.set_title("Daily Sales")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Total Amount (₹)")
+            st.pyplot(fig)
+
+            # Top Customers
+            top_customers = get_top_customers_by_restaurant(restaurant_id)
+            if top_customers is not None and not top_customers.empty:
+                st.subheader("Top Customers")
+                for idx, row in top_customers.iterrows():
+                    st.write(f"{row['customer_name']} - ₹{row['total_spent']:.2f} over {row['total_orders']} orders")
+            else:
+                st.write("No customer data available.")
+
+            # Reviews
+            
+
+            # Insights
+            if restaurant_insights is not None and not restaurant_insights.empty:
+                st.subheader("Insights")
+                st.write(f"Total Orders: {restaurant_insights.iloc[0]['total_orders']}")
+                st.write(f"Total Sales: ₹{restaurant_insights.iloc[0]['total_sales']:.2f}")
 
 
-    if restaurant_data is not None:
-        st.subheader("Total Sales by Restaurant")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.barplot(data=restaurant_data, x='restaurant_name', y='total_sales', palette='Spectral', ax=ax)
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=10)
-        ax.set_xlabel('Restaurant', fontsize=12)
-        ax.set_ylabel('Total Sales (INR)', fontsize=12)
-        ax.set_title('Total Sales by Restaurant', fontsize=14)
-        st.pyplot(fig)
 
-    # Fetch orders data for more analysis
-    orders_data = get_orders_data()
-
-    # Simultaneous Graphs - Average Order Value by Restaurant (Pie chart)
-    st.subheader("Order Distribution by Restaurant")
-    fig2 = px.pie(restaurant_data, names='restaurant_name', values='order_count', 
-                  title='Number of Orders by Restaurant', 
-                  color='restaurant_name', 
-                  color_discrete_sequence=px.colors.qualitative.Set3)
-    st.plotly_chart(fig2)
-
-    # Simultaneous Graph - Orders by Day
-    st.subheader("Orders by Day")
-    fig3, ax3 = plt.subplots(figsize=(10, 6))
-    orders_data['order_date'] = pd.to_datetime(orders_data['order_time']).dt.date
-    daily_sales = orders_data.groupby('order_date')['total_amount'].sum().reset_index()
-
-    sns.lineplot(data=daily_sales, x='order_date', y='total_amount', ax=ax3, palette='muted')
-    ax3.set_xlabel('Order Date', fontsize=12)
-    ax3.set_ylabel('Total Sales (INR)', fontsize=12)
-    ax3.set_title('Total Sales by Day', fontsize=14)
-    st.pyplot(fig3)
-
-  # Customer Insights
-    customer_insights = get_customer_insights()
-    if customer_insights is not None and not customer_insights.empty:
-        st.subheader("Top 5 Customers Based on Spending")
-        for index, row in customer_insights.iterrows():
-            st.write(f"***{row['customer_name']}*** made {row['total_orders']} orders, spending ₹{row['total_spent']:.2f}.")
     else:
-        st.write("No customer insights available.")
+        st.title("Login to the Dashboard")
+        st.session_state['admin'] = st.checkbox("Admin Login")
+        if not st.session_state['admin']:
+            restaurant_list = get_restaurant_list()
+            restaurant_options = restaurant_list['name'].unique()
+            selected_restaurant = st.selectbox("Select a Restaurant", restaurant_options)
+            password = st.text_input("Password", type="password")
+            if authenticate_user(selected_restaurant, password):
+                st.session_state['logged_in'] = True
+                st.session_state['admin'] = False
+                st.session_state['restaurant_id'] = restaurant_list[restaurant_list['name'] == selected_restaurant]['restaurant_id'].values[0]
+                st.session_state['username'] = selected_restaurant
+                st.session_state['restaurant_name'] = selected_restaurant
+                st.rerun()
 
-    st.header("Restaurant Insights")
-    # Reviews and Customer Insights Section
-    restaurant_options = restaurant_data['restaurant_name'].unique()  # Get unique restaurant names
-    selected_restaurant = st.selectbox("Select a Restaurant", restaurant_options)  # Dropdown for restaurant selection
-    
-    # Fetch the corresponding restaurant_id
-    selected_restaurant_id = restaurant_data[restaurant_data['restaurant_name'] == selected_restaurant].index[0] + 1  # Assuming restaurant_id starts from 1
-
-    #Fetch the corresponding Restraunt Name
-    selected_restaurant_name = restaurant_data[restaurant_data['restaurant_name'] == selected_restaurant]['restaurant_name'].values[0]
-    display_reviews_by_restaurant(selected_restaurant_id ,selected_restaurant_name )
-
-    # Restaurant Insights
-    restaurant_insights =get_restaurant_insights(selected_restaurant_id)
-    if restaurant_insights is not None and not restaurant_insights.empty:
-        st.subheader(f"Metrics for {selected_restaurant}")
-        st.write(f"Total Orders: {restaurant_insights.iloc[0]['total_orders']}")
-        st.write(f"Total Sales: ₹{restaurant_insights.iloc[0]['total_sales']:.2f}")
-    else:
-        st.write("No insights available for this restaurant.")
-
+        else:
+            password = st.text_input("Password", type="password")
+            if password == "admin":
+                st.session_state['logged_in'] = True
+                st.rerun()
   
     
 if __name__ == "__main__":
