@@ -25,3 +25,19 @@ venv/
 
 # Node stuff (if applicable)
 node_modules/
+
+sdkbin/
+# Ignore Android SDK & user-specific config
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+*.log
+*.keystore
+*.jks
+*.apk
+*.aar
+
+# Ignore user-level .android folder
+**/.android/
