@@ -5,14 +5,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 
-
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
 
 password = os.getenv("SQL_PASSWORD")
-
 
 # Function to connect to the database
 def connect_to_db():
@@ -21,7 +19,8 @@ def connect_to_db():
             host="localhost",  # Replace with your host, 'localhost' if running locally
             user="root",       # Your MySQL username
             password=password,  # Your MySQL password
-            database="food_ordering_system"  # Your database name
+            database="food_ordering_system",  # Your database name
+            auth_plugin="mysql_native_password"  # Specify authentication plugin
         )
         return connection
     except mysql.connector.Error as err:
@@ -251,14 +250,23 @@ def main():
 
     # Display metrics in columns
     col1, col2 = st.columns(2)
-
     with col1:
-        st.subheader("Most Liked Dish")
-        st.write(f"The most liked dish is: **{most_liked_dish}**.")
+        if most_liked_dish is not None:
+            st.markdown(f"<h2 style='color: #b907f7;'>{most_liked_dish}</h2>", unsafe_allow_html=True)
+        else:
+            st.markdown("<h2 style='color: #2f7ed8;'>None</h2>", unsafe_allow_html=True)
+        st.write("**Most Liked Dish**")
 
     with col2:
-        st.subheader("Average Order Value")
-        st.write(f"The average order value is: **₹{avg_order_value:.2f}**.")
+        if avg_order_value is not None:
+            st.markdown(f"<h2 style='color: #f707aa  ;'>₹{avg_order_value:.2f}</h2>", unsafe_allow_html=True)
+        else:
+            st.markdown("<h2 style='color: #f1948a;'>0</h2>", unsafe_allow_html=True)
+        st.write("**Average Order Value**")
+
+    # with col2:
+    #     st.subheader("Average Order Value")
+    #     st.write(f"The average order value is: **₹{avg_order_value:.2f}**.")
 
     if restaurant_data is not None:
         st.subheader("Total Sales by Restaurant")
